@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   synchronize-subtrees:
+    if: false  # disables this job
     runs-on: ubuntu-24.04
     steps:
       - name: Generate a token
