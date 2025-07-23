@@ -60,26 +60,13 @@ add_library(hipsparselt ${hipsparselt_source} ${hipsparselt_headers_public})
 add_library(roc::hipsparselt ALIAS hipsparselt)
 
 if( BUILD_CODE_COVERAGE )
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(COVERAGE_CXX_FLAGS
-      -fprofile-instr-generate
-      -fcoverage-mapping
-    )
-    set(COVERAGE_LINK_FLAGS
-      -fprofile-instr-generate
-    )
-  elseif(CMAKE_COMPILER_IS_GNUCXX)
-    set(COVERAGE_CXX_FLAGS
-      -fprofile-arcs
-      -ftest-coverage
-    )
-    set(COVERAGE_LINK_FLAGS
-      --coverage
-      -lgcov
-    )
-  else()
-    message(FATAL_ERROR "Unsupported compiler for code coverage")
-  endif()
+  set(COVERAGE_CXX_FLAGS
+    -fprofile-instr-generate
+    -fcoverage-mapping
+  )
+  set(COVERAGE_LINK_FLAGS
+    -fprofile-instr-generate
+  )
 
   target_compile_options(hipsparselt PRIVATE ${COVERAGE_CXX_FLAGS})
   target_link_libraries(hipsparselt PRIVATE ${COVERAGE_LINK_FLAGS})

@@ -380,121 +380,82 @@ if(BUILD_CODE_COVERAGE)
   #  > make coverage_analysis GTEST_FILTER=<> (analyze tests)
   #  > make coverage_output (generate html documentation)
   #
-  set(coverage_test ./clients/staging/hipsparselt-test)
-
   if(NOT DEFINED LLVM_COV_BIN_DIR)
-    message(STATUS "Hint: Use LLVM_COV_BIN_DIR to specify the correct llvm-cov and llvm-profdata:")
+    message(STATUS "Hint: Use LLVM_COV_BIN_DIR to specify the desired versions of llvm-cov and llvm-profdata:")
     message(STATUS "      -DLLVM_COV_BIN_DIR=/path/to/llvm/cov+profdata/bin")
   endif()
 
   find_program(LLVM_COV_EXECUTABLE llvm-cov HINTS ${LLVM_COV_BIN_DIR} REQUIRED)
   message(STATUS "using llvm-cov: ${LLVM_COV_EXECUTABLE}")
 
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    find_program(LLVM_PROFDATA_EXECUTABLE llvm-profdata HINTS ${LLVM_COV_BIN_DIR} REQUIRED)
-    message(STATUS "using llvm-profdata: ${LLVM_PROFDATA_EXECUTABLE}")
+  find_program(LLVM_PROFDATA_EXECUTABLE llvm-profdata HINTS ${LLVM_COV_BIN_DIR} REQUIRED)
+  message(STATUS "using llvm-profdata: ${LLVM_PROFDATA_EXECUTABLE}")
 
-    # Modern: Use target_* for compiler and linker flags
-    target_compile_options(hipsparselt PRIVATE
-      -fprofile-instr-generate
-      -fcoverage-mapping
-    )
+  target_compile_options(hipsparselt PRIVATE
+    -fprofile-instr-generate
+    -fcoverage-mapping
+  )
 
-    target_link_options(hipsparselt PUBLIC
-      -fprofile-instr-generate
-    )
+  target_link_options(hipsparselt PUBLIC
+    -fprofile-instr-generate
+  )
 
-    #
-    # Run coverage analysis
-    #
-    add_custom_target(coverage_analysis
-      COMMAND echo Coverage GTEST_FILTER=\${GTEST_FILTER}
-      COMMAND ${CMAKE_COMMAND} -E env
-              LLVM_PROFILE_VERBOSE=1
-              LLVM_PROFILE_FILE=./hipsparselt-test_%m.profraw
-              ${coverage_test} --gtest_filter=\"\${GTEST_FILTER}\"
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    )
+  #
+  # Run coverage analysis
+  #
+  set(coverage_test ./clients/staging/hipsparselt-test)
 
-    add_dependencies(coverage_analysis hipsparselt)
+  add_custom_target(coverage_analysis
+    COMMAND echo Coverage GTEST_FILTER=\${GTEST_FILTER}
+    COMMAND ${CMAKE_COMMAND} -E env
+            LLVM_PROFILE_VERBOSE=1
+            LLVM_PROFILE_FILE=./hipsparselt-test_%m.profraw
+            ${coverage_test} --gtest_filter=\"\${GTEST_FILTER}\"
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
 
-    #
-    # Generate coverage output using llvm-cov
-    #
-    add_custom_target(coverage_output
-      DEPENDS coverage_analysis
-      COMMAND ${CMAKE_COMMAND} -E env /bin/sh -c "${LLVM_PROFDATA_EXECUTABLE} merge -sparse ${CMAKE_BINARY_DIR}/*.profraw -o ${CMAKE_BINARY_DIR}/coverage_test.profdata"
-      COMMAND ${LLVM_COV_EXECUTABLE}
-              report
-              -object ./library/libhipsparselt.so
-              -instr-profile=./coverage_test.profdata
-              --ignore-filename-regex=.*/build/.*/.*
-              --ignore-filename-regex=.*/Tensile/.*
-      COMMAND ${LLVM_COV_EXECUTABLE}
-              show
-              -object ./library/libhipsparselt.so
-              -instr-profile=./coverage_test.profdata
-              -format=html -output-dir=coverage-report
-              --ignore-filename-regex=.*/build/.*/.*
-              --ignore-filename-regex=.*/Tensile/.*
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-      VERBATIM
-    )
+  add_dependencies(coverage_analysis hipsparselt)
 
-    add_custom_target(coverage DEPENDS coverage_output)
+  #
+  # Generate coverage output using llvm-cov
+  #
+  add_custom_target(coverage_output
+    DEPENDS coverage_analysis
+    COMMAND ${CMAKE_COMMAND} -E env
+            /bin/sh -c
+            "\"${LLVM_PROFDATA_EXECUTABLE}\" merge -sparse \
+             \"${CMAKE_BINARY_DIR}\"/*.profraw \
+             -o \"${CMAKE_BINARY_DIR}/coverage_test.profdata\""
 
-    #
-    # Coverage cleanup
-    #
-    add_custom_target(coverage_cleanup
-      COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_BINARY_DIR}/*.profraw
-      COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_BINARY_DIR}/coverage_test.profdata
-      COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_BINARY_DIR}/coverage-report
-    )
-  elseif(CMAKE_COMPILER_IS_GNUCXX)
-    #
-    # Run coverage analysis
-    #
-    add_custom_target(coverage_analysis
-      COMMAND echo Coverage GTEST_FILTER=\${GTEST_FILTER}
-      COMMAND ${coverage_test} --gtest_filter=\"\${GTEST_FILTER}\"
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    )
+    COMMAND ${LLVM_COV_EXECUTABLE}
+            report
+            -object ./library/libhipsparselt.so
+            -instr-profile=./coverage_test.profdata
+            --ignore-filename-regex=/opt/.*
+            --ignore-filename-regex=/usr/.*
+            --ignore-filename-regex=.*/Tensile/.*
+            --ignore-filename-regex=.*/build/.*
+    COMMAND ${LLVM_COV_EXECUTABLE}
+            show
+            -object ./library/libhipsparselt.so
+            -instr-profile=./coverage_test.profdata
+            -format=html -output-dir=coverage-report
+            --ignore-filename-regex=/opt/.*
+            --ignore-filename-regex=/usr/.*
+            --ignore-filename-regex=.*/Tensile/.*
+            --ignore-filename-regex=.*/build/.*
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    VERBATIM
+  )
 
-    add_dependencies(coverage_analysis hipsparselt)
+  add_custom_target(coverage DEPENDS coverage_output)
 
-    #
-    # Prepare coverage output
-    # This little script is generated because the option '--gcov-tool <program name>' of lcov cannot take arguments.
-    #
-    add_custom_target(coverage_output
-      DEPENDS coverage_analysis
-      COMMAND mkdir -p lcoverage
-      COMMAND echo "\\#!/bin/bash" > llvm-gcov.sh
-      COMMAND echo "\\# THIS FILE HAS BEEN GENERATED" >> llvm-gcov.sh
-      COMMAND printf "exec ${LLVM_COV_EXECUTABLE} gcov $$\\@" >> llvm-gcov.sh
-      COMMAND chmod +x llvm-gcov.sh
-    )
-
-    #
-    # Generate coverage output.
-    #
-    add_custom_command(TARGET coverage_output
-      COMMAND lcov --directory . --base-directory ${CMAKE_BINARY_DIR} --gcov-tool ${CMAKE_BINARY_DIR}/llvm-gcov.sh --capture -o lcoverage/raw_main_coverage.info
-      COMMAND lcov --remove lcoverage/raw_main_coverage.info "'/opt/*'" "'/usr/*'" "'*/Tensile/Source/*'" -o lcoverage/main_coverage.info
-      COMMAND genhtml lcoverage/main_coverage.info --output-directory lcoverage --prefix ${CMAKE_BINARY_DIR}
-    )
-
-    add_custom_target(coverage DEPENDS coverage_output)
-
-    #
-    # Coverage cleanup
-    #
-    add_custom_target(coverage_cleanup
-      COMMAND find ${CMAKE_BINARY_DIR} -name *.gcda -delete
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    )
-  else()
-    message(FATAL_ERROR "Unsupported compiler for coverage.")
-  endif()
+  #
+  # Coverage cleanup
+  #
+  add_custom_target(coverage_cleanup
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_BINARY_DIR}/*.profraw
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_BINARY_DIR}/coverage_test.profdata
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_BINARY_DIR}/coverage-report
+  )
 endif() # BUILD_CODE_COVERAGE
